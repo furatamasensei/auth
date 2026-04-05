@@ -61,19 +61,19 @@ func TestParseMessage(t *testing.T) {
 			error:   errUnsupportedVersion("2"),
 		},
 		{
-			example: "domain.com wants you to sign in with your Kaspa account:\nkaspa:qqk948c2dy6cp0vdg7fqx9xttc47q4qdazunhmfv8u24v77uvmxhycc2uj3yn\n\nStatement\n\nVersion: 1\nIssued At: 2025-01-01T00:00:00Z\n\n",
+			example: "domain.com wants you to sign in with your Kaspa account:\nkaspa:qqk948c2dy6cp0vdg7fqx9xttc47q4qdazunhmfv8u24v77uvmxhycc2uj3yn\n\nStatement\n\nVersion: 1\nNonce: 12345678\nIssued At: 2025-01-01T00:00:00Z\n\n",
 			error:   ErrMissingURI,
 		},
 		{
-			example: "domain.com wants you to sign in with your Kaspa account:\nkaspa:qqk948c2dy6cp0vdg7fqx9xttc47q4qdazunhmfv8u24v77uvmxhycc2uj3yn\n\nStatement\n\nVersion: 1\nURI: https://domain.com\nResources:\n- https://google.com\n",
+			example: "domain.com wants you to sign in with your Kaspa account:\nkaspa:qqk948c2dy6cp0vdg7fqx9xttc47q4qdazunhmfv8u24v77uvmxhycc2uj3yn\n\nStatement\n\nVersion: 1\nURI: https://domain.com\nNonce: 12345678\nResources:\n- https://google.com\n",
 			error:   ErrMissingIssuedAt,
 		},
 		{
-			example: "domain.com wants you to sign in with your Kaspa account:\nkaspa:qqk948c2dy6cp0vdg7fqx9xttc47q4qdazunhmfv8u24v77uvmxhycc2uj3yn\n\nStatement\n\nVersion: 1\nURI: https://domain.com\nIssued At: 2025-01-02T00:00:00Z\nExpiration Time: 2025-01-01T00:00:00Z\n",
+			example: "domain.com wants you to sign in with your Kaspa account:\nkaspa:qqk948c2dy6cp0vdg7fqx9xttc47q4qdazunhmfv8u24v77uvmxhycc2uj3yn\n\nStatement\n\nVersion: 1\nURI: https://domain.com\nNonce: 12345678\nIssued At: 2025-01-02T00:00:00Z\nExpiration Time: 2025-01-01T00:00:00Z\n",
 			error:   ErrIssuedAfterExpiration,
 		},
 		{
-			example: "domain.com wants you to sign in with your Kaspa account:\nkaspa:qqk948c2dy6cp0vdg7fqx9xttc47q4qdazunhmfv8u24v77uvmxhycc2uj3yn\n\nStatement\n\nVersion: 1\nURI: https://domain.com\nIssued At: 2025-01-01T00:00:00Z\nExpiration Time: 2025-01-02T00:00:00Z\nNot Before: 2025-01-03T00:00:00Z\n",
+			example: "domain.com wants you to sign in with your Kaspa account:\nkaspa:qqk948c2dy6cp0vdg7fqx9xttc47q4qdazunhmfv8u24v77uvmxhycc2uj3yn\n\nStatement\n\nVersion: 1\nURI: https://domain.com\nNonce: 12345678\nIssued At: 2025-01-01T00:00:00Z\nExpiration Time: 2025-01-02T00:00:00Z\nNot Before: 2025-01-03T00:00:00Z\n",
 			error:   ErrNotBeforeAfterExpiration,
 		},
 		{
@@ -83,6 +83,14 @@ func TestParseMessage(t *testing.T) {
 		{
 			example: "domain.com wants you to sign in with your Kaspa account:\nkaspa:qqk948c2dy6cp0vdg7fqx9xttc47q4qdazunhmfv8u24v77uvmxhycc2uj3yn\n\nVersion: 1\nURI: https://domain.com\nIssued At: 2025-01-01T00:00:00Z\nNetwork ID: random:mainnet",
 			error:   ErrInvalidNetworkID,
+		},
+		{
+			example: "domain.com wants you to sign in with your Kaspa account:\nkaspa:qqk948c2dy6cp0vdg7fqx9xttc47q4qdazunhmfv8u24v77uvmxhycc2uj3yn\n\nStatement\n\nVersion: 1\nURI: https://domain.com\nNonce: short\nIssued At: 2025-01-01T00:00:00Z\n",
+			error:   ErrInvalidNonce,
+		},
+		{
+			example: "domain.com wants you to sign in with your Kaspa account:\nkaspa:qqk948c2dy6cp0vdg7fqx9xttc47q4qdazunhmfv8u24v77uvmxhycc2uj3yn\n\nStatement\n\nVersion: 1\nURI: https://domain.com\nIssued At: 2025-01-01T00:00:00Z\n",
+			error:   ErrMissingNonce,
 		},
 	}
 

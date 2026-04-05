@@ -21,6 +21,8 @@ var (
 	ErrIssuedAfterExpiration    = errors.New("siwk: Issued At is after Expiration Time")
 	ErrNotBeforeAfterExpiration = errors.New("siwk: Not Before is after Expiration Time")
 	ErrInvalidNetworkID         = errors.New("siwk: Network ID is not valid")
+	ErrInvalidNonce             = errors.New("siwk: Nonce must be at least 8 characters")
+	ErrMissingNonce             = errors.New("siwk: Nonce is required")
 )
 
 // Dynamic error constructors

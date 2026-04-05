@@ -129,7 +129,9 @@ func ParseMessage(raw string) (*SIWKMessage, error) {
 			msg.NetworkID = value
 
 		case "Nonce":
-			// this is supposed to be REQUIRED >8 chr alphanum but we'll leave it for now for gotrue's nonce impl
+			if len(value) < 8 {
+				return nil, ErrInvalidNonce
+			}
 			msg.Nonce = value
 
 		case "Issued At":
@@ -174,6 +176,10 @@ func ParseMessage(raw string) (*SIWKMessage, error) {
 
 	if msg.Version != "1" {
 		return nil, errUnsupportedVersion(msg.Version)
+	}
+
+	if msg.Nonce == "" {
+		return nil, ErrMissingNonce
 	}
 
 	if msg.IssuedAt.IsZero() {
