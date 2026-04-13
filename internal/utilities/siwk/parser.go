@@ -31,7 +31,7 @@ type SIWKMessage struct {
 	Resources      []*url.URL
 }
 
-const headerSuffix = " wants you to sign in with your Kaspa account:"
+const headerSuffix = " wants you to sign in with your Kaspa address:"
 
 var addressPattern = regexp.MustCompile("^(kaspa|kaspatest|kaspadev|kaspasim):[a-zA-Z0-9]+$")
 
@@ -122,7 +122,7 @@ func ParseMessage(raw string) (*SIWKMessage, error) {
 		case "Version":
 			msg.Version = value
 
-		case "Network ID":
+		case "Chain ID":
 			if value == "" || !isValidKaspaNetwork(value) {
 				return nil, ErrInvalidNetworkID
 			}
