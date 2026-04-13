@@ -138,7 +138,9 @@ func TestParseMessage(t *testing.T) {
 			require.Equal(t, "12345678", parsed.Nonce)
 			// require.Equal(t, "abcdef", *parsed.RequestID)
 
-			require.Equal(t, true, parsed.VerifySignature((example.signature)))
+			ok, verifyErr := parsed.VerifySignature(example.signature)
+			require.NoError(t, verifyErr)
+			require.True(t, ok)
 		})
 	}
 }

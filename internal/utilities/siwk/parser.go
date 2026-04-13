@@ -221,69 +221,54 @@ func ParseMessage(raw string) (*SIWKMessage, error) {
 //
 // Returns:
 //   - bool: true if the signature is valid for the message and address, false otherwise
-//
-// Panics:
-//   - If signature hex is invalid or not 64 bytes long
-//   - If the Kaspa address format is invalid
-//   - If the address version is unsupported (not 0 or 1)
-//   - If public key length doesn't match the expected length for the address version
-//   - If signature verification operations fail
-func (m *SIWKMessage) VerifySignature(signatureHex string) bool {
+//   - error: non-nil if the signature or address is malformed and verification could not be performed
+func (m *SIWKMessage) VerifySignature(signatureHex string) (bool, error) {
 	sigBytes, err := hex.DecodeString(signatureHex)
 	if err != nil {
-		panic("siwk: invalid signature hex: " + err.Error())
+		return false, fmt.Errorf("siwk: invalid signature hex: %w", err)
 	}
 
 	if len(sigBytes) != 64 {
-		panic("siwk: signature must be 64 bytes long")
+		return false, fmt.Errorf("siwk: signature must be 64 bytes long")
 	}
 
 	_, pkBytes, version, err := bech32.Decode(m.Address)
 	if err != nil {
-		panic("siwk: invalid Kaspa address: " + err.Error())
+		return false, fmt.Errorf("siwk: invalid Kaspa address: %w", err)
 	}
 
 	if version != 0 && version != 1 {
-		panic("siwk: unsupported Kaspa address version, expected 0 or 1, found:" + string(version))
+		return false, fmt.Errorf("siwk: unsupported Kaspa address version, expected 0 or 1, found: %d", version)
 	}
 
 	if version == 0 && len(pkBytes) != 32 {
-		panic(fmt.Sprintf("siwk: invalid schnorr public key length for version 0, expected 32 bytes, found: %d", len(pkBytes)))
+		return false, fmt.Errorf("siwk: invalid schnorr public key length for version 0, expected 32 bytes, found: %d", len(pkBytes))
 	}
 
 	if version == 1 && len(pkBytes) != 33 {
-		panic(fmt.Sprintf("siwk: invalid schnorr public key length for version 1, expected 33 bytes, found: %d", len(pkBytes)))
+		return false, fmt.Errorf("siwk: invalid ecdsa public key length for version 1, expected 33 bytes, found: %d", len(pkBytes))
 	}
 
-	var ok bool
-
 	if version == 0 {
-		// gt signature bytes from hex
 		var signature secp256k1.SerializedSchnorrSignature
 
 		_, err = hex.Decode(signature[:], []byte(signatureHex))
 		if err != nil {
-			panic("siwk: failed to decode signature hex: " + err.Error())
+			return false, fmt.Errorf("siwk: failed to decode signature hex: %w", err)
 		}
 
-		// Verify using Schnorr
-		ok, err = VerifySchnorr([]byte(m.Raw), signature[:], pkBytes)
+		ok, err := VerifySchnorr([]byte(m.Raw), signature[:], pkBytes)
 		if err != nil {
-			panic("siwk: failed to verify schnorr signature: " + err.Error())
+			return false, fmt.Errorf("siwk: failed to verify schnorr signature: %w", err)
 		}
 
-		return ok
+		return ok, nil
 	}
 
-	if version == 1 {
-		ok, err = VerifyECDSA([]byte(m.Raw), sigBytes, pkBytes)
-
-		if err != nil {
-			panic("siwk: failed to verify ecdsa signature: " + err.Error())
-		}
-
-		return ok
+	ok, err := VerifyECDSA([]byte(m.Raw), sigBytes, pkBytes)
+	if err != nil {
+		return false, fmt.Errorf("siwk: failed to verify ecdsa signature: %w", err)
 	}
 
-	return false
+	return ok, nil
 }
