@@ -1,9 +1,10 @@
 FROM golang:1.25.8-alpine3.23 as build
 ENV GO111MODULE=on
-ENV CGO_ENABLED=0
+# ENV CGO_ENABLED=0
 ENV GOOS=linux
 
-RUN apk add --no-cache make git
+# RUN apk add --no-cache make git
+RUN apk add --no-cache make git build-base clang pkgconf
 
 WORKDIR /go/src/github.com/supabase/auth
 

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -11,11 +12,14 @@ import (
 	"time"
 
 	"github.com/gobwas/glob"
+	"github.com/kaspanet/go-secp256k1"
+	"github.com/kaspanet/kaspad/util/bech32"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/supabase/auth/internal/api/apierrors"
 	"github.com/supabase/auth/internal/conf"
+	"github.com/supabase/auth/internal/utilities/siwk"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 )
@@ -29,6 +33,7 @@ type Web3TestSuite struct {
 type ChainType string
 
 const (
+	ChainKaspa    ChainType = "kaspa"
 	ChainSolana   ChainType = "solana"
 	ChainEthereum ChainType = "ethereum"
 )
@@ -70,6 +75,54 @@ func ChainMessagef(format string, chain ChainType) string {
 	return fmt.Sprintf(format, chainStr)
 }
 
+const kaspaTestPrivateKeyHex = "1111111111111111111111111111111111111111111111111111111111111111"
+
+func kaspaTestPrivateKey() *secp256k1.ECDSAPrivateKey {
+	keyBytes, err := hex.DecodeString(kaspaTestPrivateKeyHex)
+	if err != nil {
+		panic(err)
+	}
+
+	key, err := secp256k1.DeserializeECDSAPrivateKeyFromSlice(keyBytes)
+	if err != nil {
+		panic(err)
+	}
+
+	return key
+}
+
+func kaspaTestAddress() string {
+	key := kaspaTestPrivateKey()
+
+	pubKey, err := key.ECDSAPublicKey()
+	if err != nil {
+		panic(err)
+	}
+
+	serializedPubKey, err := pubKey.Serialize()
+	if err != nil {
+		panic(err)
+	}
+
+	return bech32.Encode("kaspa", serializedPubKey[:], 1)
+}
+
+func kaspaTestSignature(message string) string {
+	key := kaspaTestPrivateKey()
+
+	messageHash := siwk.MessageHash([]byte(message))
+	var hash secp256k1.Hash
+	copy(hash[:], messageHash[:])
+
+	signature, err := key.ECDSASign(&hash)
+	if err != nil {
+		panic(err)
+	}
+
+	serializedSignature := signature.Serialize()
+	return hex.EncodeToString(serializedSignature[:])
+}
+
 func (ts *Web3TestSuite) TestUnsupportedChain() {
 	var buffer bytes.Buffer
 	require.NoError(ts.T(), json.NewEncoder(&buffer).Encode(map[string]interface{}{
@@ -94,14 +147,16 @@ func (ts *Web3TestSuite) TestUnsupportedChain() {
 
 func (ts *Web3TestSuite) TestDisabled() {
 	defer func() {
+		ts.Config.External.Web3Kaspa.Enabled = true
 		ts.Config.External.Web3Solana.Enabled = true
 		ts.Config.External.Web3Ethereum.Enabled = true
 	}()
 
+	ts.Config.External.Web3Kaspa.Enabled = false
 	ts.Config.External.Web3Solana.Enabled = false
 	ts.Config.External.Web3Ethereum.Enabled = false
 
-	for _, chain := range []ChainType{ChainSolana, ChainEthereum} {
+	for _, chain := range []ChainType{ChainKaspa, ChainSolana, ChainEthereum} {
 		var buffer bytes.Buffer
 		require.NoError(ts.T(), json.NewEncoder(&buffer).Encode(map[string]interface{}{
 			"chain": chain,
@@ -129,12 +184,28 @@ func (ts *Web3TestSuite) TestHappyPath_FullMessage() {
 		ts.API.overrideTime = nil
 	}()
 
+	kaspaAddress := kaspaTestAddress()
+	kaspaFullMessage := fmt.Sprintf("localhost:5173 wants you to sign in with your Kaspa account:\n%s\n\nSign in on localhost\n\nURI: http://localhost:5173/\nVersion: 1\nNonce: 12345678\nIssued At: 2025-05-16T14:52:03.613Z\nExpiration Time: 2025-05-16T15:02:03.613Z\nNot Before: 2025-05-16T14:52:03.613Z", kaspaAddress)
+	kaspaMinimalMessage := fmt.Sprintf("localhost:5173 wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: http://localhost:5173/\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z", kaspaAddress)
+
 	examples := []struct {
 		now       string
 		chain     ChainType
 		message   string
 		signature string
 	}{
+		{
+			now:       "2025-05-16T15:01:59Z",
+			chain:     ChainKaspa,
+			message:   kaspaFullMessage,
+			signature: kaspaTestSignature(kaspaFullMessage),
+		},
+		{
+			now:       "2025-03-29T00:09:59Z",
+			chain:     ChainKaspa,
+			message:   kaspaMinimalMessage,
+			signature: kaspaTestSignature(kaspaMinimalMessage),
+		},
 		{
 			now:       "2025-03-29T00:09:59Z",
 			chain:     ChainSolana,
@@ -215,11 +286,19 @@ func (ts *Web3TestSuite) TestHappyPath_MinimalMessage() {
 		return t
 	}
 
+	kaspaAddress := kaspaTestAddress()
+	kaspaMessage := fmt.Sprintf("localhost:5173 wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: http://localhost:5173/\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z", kaspaAddress)
+
 	examples := []struct {
 		chain     ChainType
 		message   string
 		signature string
 	}{
+		{
+			chain:     ChainKaspa,
+			message:   kaspaMessage,
+			signature: kaspaTestSignature(kaspaMessage)},
+
 		{
 			chain:     ChainSolana,
 			message:   "supabase.com wants you to sign in with your Solana account:\n2EZEiBdw47VHT6SpZSW9VnuSvBe7DxuYHBTxj19gxvv8\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nIssued At: 2025-03-29T00:00:00Z",
@@ -269,12 +348,19 @@ func (ts *Web3TestSuite) TestValidationRules_URINotHTTPSButIsHTTP() {
 		t, _ := time.Parse(time.RFC3339, "2025-03-29T00:00:00Z")
 		return t
 	}
+	kaspaAddress := kaspaTestAddress()
+	kaspaMessage := fmt.Sprintf("supabase.com wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: http://supaabse.com\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z", kaspaAddress)
 
 	examples := []struct {
 		chain     ChainType
 		message   string
 		signature string
 	}{
+		{
+			chain:     ChainKaspa,
+			message:   kaspaMessage,
+			signature: kaspaTestSignature(kaspaMessage),
+		},
 		{
 			chain:     ChainSolana,
 			message:   "supabase.com wants you to sign in with your Solana account:\n2EZEiBdw47VHT6SpZSW9VnuSvBe7DxuYHBTxj19gxvv8\n\nStatement\n\nURI: http://supaabse.com\nVersion: 1\nIssued At: 2025-03-29T00:00:00Z",
@@ -325,12 +411,19 @@ func (ts *Web3TestSuite) TestValidationRules_URINotAllowed() {
 		t, _ := time.Parse(time.RFC3339, "2025-03-29T00:00:00Z")
 		return t
 	}
+	kaspaAddress := kaspaTestAddress()
+	kaspaMessage := fmt.Sprintf("supabase.green wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: https://supabase.green/\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z\nExpiration Time: 2025-03-29T00:10:00Z", kaspaAddress)
 
 	examples := []struct {
 		chain     ChainType
 		message   string
 		signature string
 	}{
+		{
+			chain:     ChainKaspa,
+			message:   kaspaMessage,
+			signature: kaspaTestSignature(kaspaMessage),
+		},
 		{
 			chain:     ChainSolana,
 			message:   "supabase.green wants you to sign in with your Solana account:\n2EZEiBdw47VHT6SpZSW9VnuSvBe7DxuYHBTxj19gxvv8\n\nStatement\n\nURI: https://supabase.green/\nVersion: 1\nIssued At: 2025-03-29T00:00:00Z\nExpiration Time: 2025-03-29T00:10:00Z",
@@ -381,12 +474,19 @@ func (ts *Web3TestSuite) TestValidationRules_URINotHTTPS() {
 		t, _ := time.Parse(time.RFC3339, "2025-03-29T00:00:00Z")
 		return t
 	}
+	kaspaAddress := kaspaTestAddress()
+	kaspaMessage := fmt.Sprintf("supabase.com wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: ftp://supaabse.com\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z", kaspaAddress)
 
 	examples := []struct {
 		chain     ChainType
 		message   string
 		signature string
 	}{
+		{
+			chain:     ChainKaspa,
+			message:   kaspaMessage,
+			signature: kaspaTestSignature(kaspaMessage),
+		},
 		{
 			chain:     ChainSolana,
 			message:   "supabase.com wants you to sign in with your Solana account:\n2EZEiBdw47VHT6SpZSW9VnuSvBe7DxuYHBTxj19gxvv8\n\nStatement\n\nURI: ftp://supaabse.com\nVersion: 1\nIssued At: 2025-03-29T00:00:00Z",
@@ -437,12 +537,19 @@ func (ts *Web3TestSuite) TestValidationRules_InvalidDomain() {
 		t, _ := time.Parse(time.RFC3339, "2025-03-29T00:00:00Z")
 		return t
 	}
+	kaspaAddress := kaspaTestAddress()
+	kaspaMessage := fmt.Sprintf("supabase.green wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z", kaspaAddress)
 
 	examples := []struct {
 		chain     ChainType
 		message   string
 		signature string
 	}{
+		{
+			chain:     ChainKaspa,
+			message:   kaspaMessage,
+			signature: kaspaTestSignature(kaspaMessage),
+		},
 		{
 			chain:     ChainSolana,
 			message:   "supabase.green wants you to sign in with your Solana account:\n2EZEiBdw47VHT6SpZSW9VnuSvBe7DxuYHBTxj19gxvv8\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nIssued At: 2025-03-29T00:00:00Z",
@@ -492,12 +599,19 @@ func (ts *Web3TestSuite) TestValidationRules_MismatchedDomainAndURIHostname() {
 		t, _ := time.Parse(time.RFC3339, "2025-03-29T00:00:00Z")
 		return t
 	}
+	kaspaAddress := kaspaTestAddress()
+	kaspaMessage := fmt.Sprintf("supabase.green wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z\nExpiration Time: 2025-03-29T00:10:00Z", kaspaAddress)
 
 	examples := []struct {
 		chain     ChainType
 		message   string
 		signature string
 	}{
+		{
+			chain:     ChainKaspa,
+			message:   kaspaMessage,
+			signature: kaspaTestSignature(kaspaMessage),
+		},
 		{
 			chain:     ChainSolana,
 			message:   "supabase.green wants you to sign in with your Solana account:\n2EZEiBdw47VHT6SpZSW9VnuSvBe7DxuYHBTxj19gxvv8\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nIssued At: 2025-03-29T00:00:00Z\nExpiration Time: 2025-03-29T00:10:00Z",
@@ -547,12 +661,19 @@ func (ts *Web3TestSuite) TestValidationRules_ValidatedBeforeNotBefore() {
 		t, _ := time.Parse(time.RFC3339, "2025-03-29T00:00:59Z")
 		return t
 	}
+	kaspaAddress := kaspaTestAddress()
+	kaspaMessage := fmt.Sprintf("supabase.com wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z\nNot Before: 2025-03-29T00:01:00Z", kaspaAddress)
 
 	examples := []struct {
 		chain     ChainType
 		message   string
 		signature string
 	}{
+		{
+			chain:     ChainKaspa,
+			message:   kaspaMessage,
+			signature: kaspaTestSignature(kaspaMessage),
+		},
 		{
 			chain:     ChainSolana,
 			message:   "supabase.com wants you to sign in with your Solana account:\n2EZEiBdw47VHT6SpZSW9VnuSvBe7DxuYHBTxj19gxvv8\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nIssued At: 2025-03-29T00:00:00Z\nNot Before: 2025-03-29T00:01:00Z",
@@ -602,12 +723,19 @@ func (ts *Web3TestSuite) TestValidationRules_Expired() {
 		t, _ := time.Parse(time.RFC3339, "2025-03-29T00:10:01Z")
 		return t
 	}
+	kaspaAddress := kaspaTestAddress()
+	kaspaMessage := fmt.Sprintf("supabase.com wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z\nExpiration Time: 2025-03-29T00:10:00Z\nNot Before: 2025-03-29T00:00:00Z", kaspaAddress)
 
 	examples := []struct {
 		chain     ChainType
 		message   string
 		signature string
 	}{
+		{
+			chain:     ChainKaspa,
+			message:   kaspaMessage,
+			signature: kaspaTestSignature(kaspaMessage),
+		},
 		{
 			chain:     ChainSolana,
 			message:   "supabase.com wants you to sign in with your Solana account:\n2EZEiBdw47VHT6SpZSW9VnuSvBe7DxuYHBTxj19gxvv8\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nIssued At: 2025-03-29T00:00:00Z\nExpiration Time: 2025-03-29T00:10:00Z\nNot Before: 2025-03-29T00:00:00Z",
@@ -647,6 +775,45 @@ func (ts *Web3TestSuite) TestValidationRules_Expired() {
 	}
 }
 
+func (ts *Web3TestSuite) TestValidationRules_ExpiredWithoutNotBefore() {
+	defer func() {
+		ts.API.overrideTime = nil
+	}()
+
+	ts.API.overrideTime = func() time.Time {
+		t, _ := time.Parse(time.RFC3339, "2025-03-29T00:10:01Z")
+		return t
+	}
+	kaspaAddress := kaspaTestAddress()
+	// Expiration Time present but Not Before absent — must still be rejected after expiry
+	kaspaMessage := fmt.Sprintf("supabase.com wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z\nExpiration Time: 2025-03-29T00:10:00Z", kaspaAddress)
+
+	var buffer bytes.Buffer
+	require.NoError(ts.T(), json.NewEncoder(&buffer).Encode(map[string]interface{}{
+		"chain":     ChainKaspa,
+		"message":   kaspaMessage,
+		"signature": kaspaTestSignature(kaspaMessage),
+	}))
+
+	req := httptest.NewRequest(http.MethodPost, "http://localhost/token?grant_type=web3", &buffer)
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	ts.API.handler.ServeHTTP(w, req)
+
+	assert.Equal(ts.T(), http.StatusBadRequest, w.Code)
+
+	var firstResult struct {
+		Error            string `json:"error"`
+		ErrorDescription string `json:"error_description"`
+	}
+
+	assert.NoError(ts.T(), json.NewDecoder(w.Result().Body).Decode(&firstResult))
+
+	assert.Equal(ts.T(), "invalid_grant", firstResult.Error)
+	assert.Equal(ts.T(), "Signed Kaspa message is expired", firstResult.ErrorDescription)
+}
+
 func (ts *Web3TestSuite) TestValidationRules_Future() {
 	defer func() {
 		ts.API.overrideTime = nil
@@ -656,12 +823,19 @@ func (ts *Web3TestSuite) TestValidationRules_Future() {
 		t, _ := time.Parse(time.RFC3339, "2025-03-28T23:49:59Z")
 		return t
 	}
+	kaspaAddress := kaspaTestAddress()
+	kaspaMessage := fmt.Sprintf("supabase.com wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z", kaspaAddress)
 
 	examples := []struct {
 		chain     ChainType
 		message   string
 		signature string
 	}{
+		{
+			chain:     ChainKaspa,
+			message:   kaspaMessage,
+			signature: kaspaTestSignature(kaspaMessage),
+		},
 		{
 			chain:     ChainSolana,
 			message:   "supabase.com wants you to sign in with your Solana account:\n2EZEiBdw47VHT6SpZSW9VnuSvBe7DxuYHBTxj19gxvv8\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nIssued At: 2025-03-29T00:00:00Z",
@@ -711,12 +885,19 @@ func (ts *Web3TestSuite) TestValidationRules_IssedTooLongAgo() {
 
 		return t.Add(d)
 	}
+	kaspaAddress := kaspaTestAddress()
+	kaspaMessage := fmt.Sprintf("supabase.com wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z\nNot Before: 2025-03-29T00:00:00Z", kaspaAddress)
 
 	examples := []struct {
 		chain     ChainType
 		message   string
 		signature string
 	}{
+		{
+			chain:     ChainKaspa,
+			message:   kaspaMessage,
+			signature: kaspaTestSignature(kaspaMessage),
+		},
 		{
 			chain:     ChainSolana,
 			message:   "supabase.com wants you to sign in with your Solana account:\n2EZEiBdw47VHT6SpZSW9VnuSvBe7DxuYHBTxj19gxvv8\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nIssued At: 2025-03-29T00:00:00Z\nNot Before: 2025-03-29T00:00:00Z",
@@ -766,12 +947,20 @@ func (ts *Web3TestSuite) TestValidationRules_InvalidSignature() {
 		t, _ := time.Parse(time.RFC3339, "2025-03-29T00:00:00Z")
 		return t
 	}
+	kaspaAddress := kaspaTestAddress()
+	kaspaMessage := fmt.Sprintf("supabase.com wants you to sign in with your Kaspa account:\n%s\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nNonce: 12345678\nIssued At: 2025-03-29T00:00:00Z\nExpiration Time: 2025-03-29T00:10:00Z\nNot Before: 2025-03-29T00:00:00Z", kaspaAddress)
+	invalidKaspaSignature := strings.Repeat("0", 128)
 
 	examples := []struct {
 		chain     ChainType
 		message   string
 		signature string
 	}{
+		{
+			chain:     ChainKaspa,
+			message:   kaspaMessage,
+			signature: invalidKaspaSignature,
+		},
 		{
 			chain:     ChainSolana,
 			message:   "supabase.com wants you to sign in with your Solana account:\n2EZEiBdw47VHT6SpZSW9VnuSvBe7DxuYHBTxj19gxvv8\n\nStatement\n\nURI: https://supabase.com/\nVersion: 1\nIssued At: 2025-03-29T00:00:00Z\nExpiration Time: 2025-03-29T00:10:00Z\nNot Before: 2025-03-29T00:00:00Z",
