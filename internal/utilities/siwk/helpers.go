@@ -13,10 +13,14 @@ func IsValidDomain(domain string) bool {
 	return domainPattern.MatchString(domain)
 }
 
-// @TODO: use generic network list instead of tying up with kasware values
+// isValidKaspaNetwork accepts both the short form returned by kaspa:chainId
+// ("mainnet", "testnet", "devnet", "simnet") and the legacy prefixed form
+// ("kaspa_mainnet", "kaspa_testnet_10", "kaspa_devnet", "kaspa_simnet") so
+// that previously-signed messages remain valid alongside new ones.
 func isValidKaspaNetwork(network string) bool {
 	switch network {
-	case "kaspa_mainnet", "kaspa_testnet_10", "kaspa_devnet", "kaspa_simnet":
+	case "mainnet", "testnet", "devnet", "simnet",
+		"kaspa_mainnet", "kaspa_testnet_10", "kaspa_devnet", "kaspa_simnet":
 		return true
 	default:
 		return false

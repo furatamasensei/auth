@@ -143,4 +143,29 @@ func TestParseMessage(t *testing.T) {
 			require.True(t, ok)
 		})
 	}
+
+	// Parsing-only tests for the short network ID format returned by kaspa:chainId.
+	// Signature verification is omitted because the test key is not available here;
+	// the format change only affects the Chain ID field value, not the signing logic.
+	parseOnlyExamples := []struct {
+		message   string
+		networkID string
+	}{
+		{
+			message:   "example.com wants you to sign in with your Kaspa address:\nkaspa:qpvmk3kpwuyavpgh0gcsmayrecsxlxuhy0qjadzh4v98umk9fs2c69z4q90j7\n\nURI: https://example.com\nVersion: 1\nChain ID: mainnet\nNonce: 12345678\nIssued At: 2025-11-03T10:55:43.367Z",
+			networkID: "mainnet",
+		},
+		{
+			message:   "example.com wants you to sign in with your Kaspa address:\nkaspatest:qpvmk3kpwuyavpgh0gcsmayrecsxlxuhy0qjadzh4v98umk9fs2c69z4q90j7\n\nURI: https://example.com\nVersion: 1\nChain ID: testnet\nNonce: 12345678\nIssued At: 2025-11-03T10:55:43.367Z",
+			networkID: "testnet",
+		},
+	}
+
+	for i, example := range parseOnlyExamples {
+		t.Run(fmt.Sprintf("parse-only new format example %d", i), func(t *testing.T) {
+			parsed, err := ParseMessage(example.message)
+			require.Nil(t, err)
+			require.Equal(t, example.networkID, parsed.NetworkID)
+		})
+	}
 }
